@@ -1,7 +1,9 @@
 package client
 
 import (
+	"bufio"
 	"net"
+	"os"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
@@ -19,6 +21,8 @@ type ClientConfig struct {
 	ServerHost string
 	ServerPort string
 	AgencyId   string
+	InputFile  string
+	OutputFile string
 }
 
 type Client struct {
@@ -62,29 +66,46 @@ func (client *Client) Run() error {
 	const mainAction = "test-echo-server"
 	defer client.conn.Close()
 
-	for messageId := range ECHO_CLIENT_MESSAGE_AMOUNT {
-		messageArgs := []any{"agency-id", client.config.AgencyId, "message-id", messageId}
-		logger.Info(mainAction, logger.InProgress, messageArgs...)
+	inputFile, err := os.Open(client.config.InputFile)
+	if err != nil {
+		logger.Error("file error", logger.Fail, err)
+		return err
+	}
+	defer inputFile.Close()
 
-		clientMessage := client.config.AgencyId
+	outputFile, err := os.Create(client.config.OutputFile)
+	if err != nil {
+		logger.Error("file error", logger.Fail, err)
+		return err
+	}
+	defer outputFile.Close()
+	dataWriter := bufio.NewWriter(outputFile)
 
+	scanner := bufio.NewScanner(inputFile)
+	for scanner.Scan() {
+		line := scanner.Text()
+		clientMessage := line
 		if err := safe_socket.SendAll(client.conn, []byte(clientMessage)); err != nil {
-			logger.Error("send-message", logger.Fail, messageArgs...)
+			logger.Error("send-message", logger.Fail)
 			return err
 		}
 
-		responseBuffer, err := safe_socket.RecvAll(client.conn, ECHO_CLIENT_BUFFER_SIZE)
+		responseBuffer, err := safe_socket.RecvAll(client.conn, len(clientMessage))
 		if err != nil {
-			logger.Error("recv-response", logger.Fail, messageArgs...)
+			logger.Error("recv-response", logger.Fail)
 			return err
 		}
 
-		if string(responseBuffer) == clientMessage {
-			logger.Error("check-response", logger.Fail, messageArgs...)
+		//_, err = dataWriter.Write(responseBuffer)
+		_, err = dataWriter.Write(append(responseBuffer, '\n'))
+		if err != nil {
+			logger.Error("write-response", logger.Fail)
 			return err
 		}
-
-		time.Sleep(ECHO_CLIENT_MESSAGE_DELAY_MS * time.Millisecond)
+	}
+	if err := dataWriter.Flush(); err != nil {
+		logger.Error("flush-output", logger.Fail)
+		return err
 	}
 	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
 
