@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
@@ -13,7 +14,7 @@ import (
 const CONNECTION_ATTEMPTS_MAX = 3
 const CONNECTION_ATTEMPS_DELAY_MS = 200
 
-const ECHO_CLIENT_BUFFER_SIZE = 512
+const ECHO_CLIENT_BUFFER_SIZE = 1024
 const ECHO_CLIENT_MESSAGE_AMOUNT = 3
 const ECHO_CLIENT_MESSAGE_DELAY_MS = 1000
 
@@ -84,20 +85,21 @@ func (client *Client) Run() error {
 	scanner := bufio.NewScanner(inputFile)
 	for scanner.Scan() {
 		line := scanner.Text()
-		clientMessage := line
-		if err := safe_socket.SendAll(client.conn, []byte(clientMessage)); err != nil {
+		message := make([]byte, ECHO_CLIENT_BUFFER_SIZE)
+		copy(message, []byte(line))
+		if err := safe_socket.SendAll(client.conn, message); err != nil {
 			logger.Error("send-message", logger.Fail)
 			return err
 		}
 
-		responseBuffer, err := safe_socket.RecvAll(client.conn, len(clientMessage))
+		responseBuffer, err := safe_socket.RecvAll(client.conn, ECHO_CLIENT_BUFFER_SIZE)
 		if err != nil {
 			logger.Error("recv-response", logger.Fail)
 			return err
 		}
 
-		//_, err = dataWriter.Write(responseBuffer)
-		_, err = dataWriter.Write(append(responseBuffer, '\n'))
+		trimmed := strings.TrimRight(string(responseBuffer), "\x00")
+		_, err = dataWriter.WriteString(trimmed + "\n")
 		if err != nil {
 			logger.Error("write-response", logger.Fail)
 			return err
