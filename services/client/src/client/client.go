@@ -4,17 +4,15 @@ import (
 	"bufio"
 	"net"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
-	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/protocol"
 )
 
 const CONNECTION_ATTEMPTS_MAX = 3
 const CONNECTION_ATTEMPS_DELAY_MS = 200
 
-const ECHO_CLIENT_BUFFER_SIZE = 1024
 const ECHO_CLIENT_MESSAGE_AMOUNT = 3
 const ECHO_CLIENT_MESSAGE_DELAY_MS = 1000
 
@@ -27,25 +25,26 @@ type ClientConfig struct {
 }
 
 type Client struct {
-	conn   net.Conn
 	config ClientConfig
+	proto  *protocol.Protocol
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
-	conn, err := connectToServer(config.ServerHost, config.ServerPort)
+	protocol, err := connectToServer(config.ServerHost, config.ServerPort)
 	if err != nil {
 		logger.Warn("connect-to-server", logger.Fail)
 		return nil, err
 	}
 
-	client := &Client{conn: conn, config: config}
+	client := &Client{config: config, proto: protocol}
 	return client, nil
 }
 
-func connectToServer(host, port string) (net.Conn, error) {
+func connectToServer(host, port string) (*protocol.Protocol, error) {
 	const action = "connect-to-server"
 	var err error
 	var conn net.Conn
+	var p *protocol.Protocol
 
 	logger.Info(action, logger.InProgress)
 	for i := range CONNECTION_ATTEMPTS_MAX {
@@ -55,17 +54,19 @@ func connectToServer(host, port string) (net.Conn, error) {
 			time.Sleep(CONNECTION_ATTEMPS_DELAY_MS * time.Millisecond)
 			continue
 		}
-
 		logger.Info(action, logger.Success)
 		break
 	}
+	if err != nil {
+		return nil, err
+	}
+	p, err = protocol.NewProtocol(conn)
 
-	return conn, err
+	return p, err
 }
 
 func (client *Client) Run() error {
 	const mainAction = "test-echo-server"
-	defer client.conn.Close()
 
 	inputFile, err := os.Open(client.config.InputFile)
 	if err != nil {
@@ -85,21 +86,18 @@ func (client *Client) Run() error {
 	scanner := bufio.NewScanner(inputFile)
 	for scanner.Scan() {
 		line := scanner.Text()
-		message := make([]byte, ECHO_CLIENT_BUFFER_SIZE)
-		copy(message, []byte(line))
-		if err := safe_socket.SendAll(client.conn, message); err != nil {
-			logger.Error("send-message", logger.Fail)
-			return err
-		}
 
-		responseBuffer, err := safe_socket.RecvAll(client.conn, ECHO_CLIENT_BUFFER_SIZE)
+		err := client.proto.Send(line)
 		if err != nil {
-			logger.Error("recv-response", logger.Fail)
 			return err
 		}
 
-		trimmed := strings.TrimRight(string(responseBuffer), "\x00")
-		_, err = dataWriter.WriteString(trimmed + "\n")
+		response, err := client.proto.Recv()
+		if err != nil {
+			return err
+		}
+
+		_, err = dataWriter.WriteString(response + "\n")
 		if err != nil {
 			logger.Error("write-response", logger.Fail)
 			return err
@@ -110,6 +108,9 @@ func (client *Client) Run() error {
 		return err
 	}
 	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
-
+	err = client.proto.Close()
+	if err != nil {
+		return err
+	}
 	return nil
 }
