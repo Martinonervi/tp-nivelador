@@ -20,6 +20,8 @@ def send_all(socket: socket.socket, bytes):
     while sent < len(bytes):
         n = socket.send(bytes[sent:])
         sent += n
-        if sent == 0:
-            raise RuntimeError("Socket connection closed")
-    return
+        if n == 0 and sent != 0:
+            raise RuntimeError("Socket connection closed") # cerro de la nada
+        if n == 0: # cerro bien
+            return sent
+    return sent
