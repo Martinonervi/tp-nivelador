@@ -5,8 +5,6 @@ import safe_socket
 from protocol import Protocol
 from lottery import Lottery
 
-_ECHO_SERVER_MESSAGE_SIZE = 1024
-
 
 class Server:
     def __init__(self, server_host: str, server_port: int) -> None:
@@ -15,21 +13,27 @@ class Server:
 
     def _handle_client(self, client_socket):
         protocol = Protocol(client_socket)
-        bets = []
-        while True:
-            flag = protocol.more_bets()
-            if not flag: break
-            bet = protocol.recv_bet()
-            bets.append(bet)
+        try:
+            bets = []
+            while True:
+                flag = protocol.more_bets()
+                if not flag: break
+                bet = protocol.recv_bet()
+                bets.append(bet)
 
-        lottery = Lottery(None) # deberia pasarle un path?
-        #lottery.store_bets(bets)
+            lottery = Lottery(None) # deberia pasarle un path?
+            #lottery = Lottery(self.storage_path)
+            #lottery.store_bets(bets)
 
-        winners = [bet for bet in bets if lottery.has_won(bet)]
-        #winners = [bet for bet in lottery.load_bets() if lottery.has_won(bet)]
-        for winner in winners:
-            protocol.send_bet(winner)
-        protocol.send_no_more_bets()
+            winners = [bet for bet in bets if lottery.has_won(bet)]
+            #winners = [bet for bet in lottery.load_bets() if lottery.has_won(bet)]
+            for winner in winners:
+                protocol.send_bet(winner)
+            protocol.send_no_more_bets()
+        except Exception as e:
+            logger.error("handle-client", logger.LogResult.fail)
+        finally:
+            protocol.close()
 
 
     def run(self):

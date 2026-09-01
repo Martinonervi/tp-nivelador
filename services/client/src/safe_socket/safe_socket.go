@@ -7,7 +7,7 @@ import "io"
 func SendAll(socket io.Writer, bytes []byte) error {
 	sent := 0
 	for sent < len(bytes) {
-		n, err := socket.Write(bytes[sent:]) //controla el caso de q cierre justo
+		n, err := socket.Write(bytes[sent:])
 		if err != nil {
 			return err
 		}

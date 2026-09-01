@@ -19,11 +19,7 @@ func NewProtocol(socket net.Conn) (*Protocol, error) {
 }
 
 func (p *Protocol) Close() error {
-	err := p.skt.Close()
-	if err != nil {
-		return err
-	}
-	return nil
+	return p.skt.Close()
 }
 
 // SEND
@@ -39,7 +35,11 @@ func (p *Protocol) SendBet(bet lottery.Bet) error {
 	buffer = appendString(buffer, bet.FirstName)
 	buffer = appendString(buffer, bet.LastName)
 	buffer = appendDocument(buffer, bet.Document)
-	buffer, _ = appendBirthdate(buffer, bet.Birthdate)
+	var err error
+	buffer, err = appendBirthdate(buffer, bet.Birthdate)
+	if err != nil {
+		return err
+	}
 	buffer = appendBetNumber(buffer, bet.Number)
 	return safe_socket.SendAll(p.skt, buffer)
 }
@@ -81,15 +81,26 @@ func appendBetNumber(buffer []byte, betNumber int) []byte {
 
 func (p *Protocol) RecvBet() (lottery.Bet, error) {
 	bet := lottery.Bet{}
-	aux, _ := safe_socket.RecvAll(p.skt, 1)
+	aux, err := safe_socket.RecvAll(p.skt, 1)
+	if err != nil {
+		return bet, err
+	}
 	bet.AgencyId = int(aux[0])
-	bet.FirstName, _ = p.recvString()
-	bet.LastName, _ = p.recvString()
-	buffer, _ := safe_socket.RecvAll(p.skt, 12)
+	bet.FirstName, err = p.recvString()
+	if err != nil {
+		return bet, err
+	}
+	bet.LastName, err = p.recvString()
+	if err != nil {
+		return bet, err
+	}
+	buffer, err := safe_socket.RecvAll(p.skt, 12)
+	if err != nil {
+		return bet, err
+	}
 	bet.Document = int(binary.BigEndian.Uint32(buffer[:4]))
 	bet.Birthdate = parseBirthdate(buffer[4:8])
 	bet.Number = int(binary.BigEndian.Uint32(buffer[8:]))
-
 	return bet, nil
 }
 

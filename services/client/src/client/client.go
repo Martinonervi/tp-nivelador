@@ -67,6 +67,7 @@ func connectToServer(host, port string) (*protocol.Protocol, error) {
 }
 
 func (client *Client) Run() error {
+	defer client.proto.Close()
 	const mainAction = "test-echo-server"
 
 	inputFile, err := os.Open(client.config.InputFile)
@@ -85,16 +86,26 @@ func (client *Client) Run() error {
 	dataWriter := bufio.NewWriter(outputFile)
 
 	scanner := bufio.NewScanner(inputFile)
+	agencyId, err := strconv.Atoi(client.config.AgencyId)
+	if err != nil {
+		return err
+	}
+
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		//deberia manejar error Atoi
 		fields := strings.Split(line, ",")
-		document, _ := strconv.Atoi(fields[2])
-		number, _ := strconv.Atoi(fields[4])
+		document, err := strconv.Atoi(fields[2])
+		if err != nil {
+			return err
+		}
+		number, err := strconv.Atoi(fields[4])
+		if err != nil {
+			return err
+		}
 
 		bet := lottery.Bet{
-			AgencyId:  1, //hardcodeado
+			AgencyId:  agencyId,
 			FirstName: fields[0],
 			LastName:  fields[1],
 			Document:  document,
@@ -102,8 +113,7 @@ func (client *Client) Run() error {
 			Number:    number,
 		}
 
-		//err := client.proto.Send(line)
-		err := client.proto.SendBet(bet)
+		err = client.proto.SendBet(bet)
 		if err != nil {
 			return err
 		}
@@ -138,10 +148,6 @@ func (client *Client) Run() error {
 		return err
 	}
 	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
-	err = client.proto.Close()
-	if err != nil {
-		return err
-	}
 	return nil
 }
 

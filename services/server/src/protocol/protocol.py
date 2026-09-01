@@ -18,11 +18,11 @@ class Protocol:
         buf += struct.pack('>H', len(last_name_bytes)) + last_name_bytes
 
         buf += struct.pack('>I', bet.document)
-        buf += self._parse_birthdate(bet.birthdate)
+        buf += self._pack_birthdate(bet.birthdate)
         buf += struct.pack('>I', bet.number)
         return safe_socket.send_all(self.skt, buf)
 
-    def _parse_birthdate(self, birthdate):
+    def _pack_birthdate(self, birthdate):
         buf = b''
         year, month, day = map(int, birthdate.split('-'))
         buf += struct.pack('>H', year)
@@ -38,7 +38,7 @@ class Protocol:
         #solo quedan cosas fijas, las recibo
         buffer = safe_socket.recv_all(self.skt, 12)
         document = struct.unpack('>I', buffer[:4])[0]
-        birthdate = self._recv_birthdate(buffer[4:8])
+        birthdate = self._unpack_birthdate(buffer[4:8])
         number = struct.unpack('>I', buffer[8:])[0]
         return Bet(agency_id, first_name, last_name, document, birthdate, number)
 
@@ -46,7 +46,7 @@ class Protocol:
         length = struct.unpack('>H', safe_socket.recv_all(self.skt, 2))[0]
         return safe_socket.recv_all(self.skt, length).decode('utf-8')
 
-    def _recv_birthdate(self, buffer):
+    def _unpack_birthdate(self, buffer):
         year = struct.unpack('>H', buffer[:2])[0]
         month = buffer[2]
         day = buffer[3]
@@ -55,11 +55,14 @@ class Protocol:
     def more_bets(self):
         flag = safe_socket.recv_all(self.skt, 1)
         if not flag:
-            return False # tengo que levantar error?
+            raise RuntimeError("connection closed")
         return flag[0] != 0
 
     def send_no_more_bets(self):
         safe_socket.send_all(self.skt, b'\x00')
+
+    def close(self):
+        return self.skt.close()
 
 '''
 struct.unpack(formato, bytes) 
