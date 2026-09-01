@@ -2,19 +2,20 @@ package client
 
 import (
 	"bufio"
+	"fmt"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/lottery"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/protocol"
 )
 
 const CONNECTION_ATTEMPTS_MAX = 3
 const CONNECTION_ATTEMPS_DELAY_MS = 200
-
-const ECHO_CLIENT_MESSAGE_AMOUNT = 3
-const ECHO_CLIENT_MESSAGE_DELAY_MS = 1000
 
 type ClientConfig struct {
 	ServerHost string
@@ -87,22 +88,51 @@ func (client *Client) Run() error {
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		err := client.proto.Send(line)
+		//deberia manejar error Atoi
+		fields := strings.Split(line, ",")
+		document, _ := strconv.Atoi(fields[2])
+		number, _ := strconv.Atoi(fields[4])
+
+		bet := lottery.Bet{
+			AgencyId:  1, //hardcodeado
+			FirstName: fields[0],
+			LastName:  fields[1],
+			Document:  document,
+			Birthdate: fields[3],
+			Number:    number,
+		}
+
+		//err := client.proto.Send(line)
+		err := client.proto.SendBet(bet)
 		if err != nil {
 			return err
 		}
 
-		response, err := client.proto.Recv()
-		if err != nil {
-			return err
-		}
-
-		_, err = dataWriter.WriteString(response + "\n")
-		if err != nil {
-			logger.Error("write-response", logger.Fail)
-			return err
-		}
 	}
+
+	err = client.proto.SendNoMoreBets()
+	if err != nil {
+		return err
+	}
+
+	for {
+		moreBets, err := client.proto.MoreBets()
+		if err != nil {
+			return err
+		}
+		if !moreBets {
+			break
+		}
+		bet, err := client.proto.RecvBet()
+		if err != nil {
+			return err
+		}
+		if err := writeBetToFile(dataWriter, bet); err != nil {
+			return err
+		}
+
+	}
+
 	if err := dataWriter.Flush(); err != nil {
 		logger.Error("flush-output", logger.Fail)
 		return err
@@ -113,4 +143,10 @@ func (client *Client) Run() error {
 		return err
 	}
 	return nil
+}
+
+func writeBetToFile(writer *bufio.Writer, bet lottery.Bet) error {
+	line := fmt.Sprintf("%s,%s,%d,%s,%d\n", bet.FirstName, bet.LastName, bet.Document, bet.Birthdate, bet.Number)
+	_, err := writer.WriteString(line)
+	return err
 }
