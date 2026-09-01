@@ -4,15 +4,11 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
-	"strings"
 	"time"
 
-	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/lottery"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
 )
-
-const ECHO_CLIENT_BUFFER_SIZE = 1024
 
 type Protocol struct {
 	skt net.Conn
@@ -20,27 +16,6 @@ type Protocol struct {
 
 func NewProtocol(socket net.Conn) (*Protocol, error) {
 	return &Protocol{skt: socket}, nil
-}
-
-func (p *Protocol) Send(line string) error {
-	message := make([]byte, ECHO_CLIENT_BUFFER_SIZE)
-	copy(message, []byte(line))
-	if err := safe_socket.SendAll(p.skt, message); err != nil {
-		logger.Error("send-message", logger.Fail)
-		return err
-	}
-	return nil
-}
-
-func (p *Protocol) Recv() (string, error) {
-	responseBuffer, err := safe_socket.RecvAll(p.skt, ECHO_CLIENT_BUFFER_SIZE)
-	if err != nil {
-		logger.Error("recv-response", logger.Fail)
-		return string(responseBuffer), err
-	}
-
-	var trimmed string = strings.TrimRight(string(responseBuffer), "\x00")
-	return trimmed, nil
 }
 
 func (p *Protocol) Close() error {
@@ -51,8 +26,16 @@ func (p *Protocol) Close() error {
 	return nil
 }
 
+// SEND
+
+func (p *Protocol) SendNoMoreBets() error {
+	return safe_socket.SendAll(p.skt, []byte{0x00})
+}
+
 func (p *Protocol) SendBet(bet lottery.Bet) error {
 	var buffer []byte // podria ser mas optimo si le asigno la length
+	buffer = append(buffer, 0x01)
+	buffer = append(buffer, byte(bet.AgencyId))
 	buffer = appendString(buffer, bet.FirstName)
 	buffer = appendString(buffer, bet.LastName)
 	buffer = appendDocument(buffer, bet.Document)
@@ -94,9 +77,12 @@ func appendBetNumber(buffer []byte, betNumber int) []byte {
 	return buffer
 }
 
+// RECV
+
 func (p *Protocol) RecvBet() (lottery.Bet, error) {
 	bet := lottery.Bet{}
-	//bet.AgencyId
+	aux, _ := safe_socket.RecvAll(p.skt, 1)
+	bet.AgencyId = int(aux[0])
 	bet.FirstName, _ = p.recvString()
 	bet.LastName, _ = p.recvString()
 	buffer, _ := safe_socket.RecvAll(p.skt, 12)
@@ -125,4 +111,12 @@ func parseBirthdate(buffer []byte) string {
 	month := buffer[2]
 	day := buffer[3]
 	return fmt.Sprintf("%04d-%02d-%02d", year, month, day)
+}
+
+func (p *Protocol) MoreBets() (bool, error) {
+	buf, err := safe_socket.RecvAll(p.skt, 1)
+	if err != nil {
+		return false, err
+	}
+	return buf[0] != 0, nil
 }
