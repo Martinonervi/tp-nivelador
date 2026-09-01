@@ -8,8 +8,11 @@ services:
       - PYTHONUNBUFFERED=1
       - SERVER_HOST=server
       - SERVER_PORT=5678
+      - SERVER_STORAGE=/server_storage/bets.csv
     ports:
       - "5678:5678"
+    volumes:
+      - ./server_storage:/server_storage
 
   client_0:
     build:

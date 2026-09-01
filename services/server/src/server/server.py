@@ -7,9 +7,10 @@ from lottery import Lottery
 
 
 class Server:
-    def __init__(self, server_host: str, server_port: int) -> None:
+    def __init__(self, server_host: str, server_port: int, storage_path: str) -> None:
         self.server_host = server_host
         self.server_port = server_port
+        self.storage_path = storage_path
 
     def _handle_client(self, client_socket):
         protocol = Protocol(client_socket)
@@ -21,12 +22,10 @@ class Server:
                 bet = protocol.recv_bet()
                 bets.append(bet)
 
-            lottery = Lottery(None) # deberia pasarle un path?
-            #lottery = Lottery(self.storage_path)
-            #lottery.store_bets(bets)
+            lottery = Lottery(self.storage_path)
+            lottery.store_bets(bets)
 
-            winners = [bet for bet in bets if lottery.has_won(bet)]
-            #winners = [bet for bet in lottery.load_bets() if lottery.has_won(bet)]
+            winners = [bet for bet in lottery.load_bets() if lottery.has_won(bet)]
             for winner in winners:
                 protocol.send_bet(winner)
             protocol.send_no_more_bets()
