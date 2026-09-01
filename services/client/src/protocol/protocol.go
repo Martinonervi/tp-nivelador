@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -91,4 +92,37 @@ func appendBetNumber(buffer []byte, betNumber int) []byte {
 	binary.BigEndian.PutUint32(buf, uint32(betNumber))
 	buffer = append(buffer, buf...)
 	return buffer
+}
+
+func (p *Protocol) RecvBet() (lottery.Bet, error) {
+	bet := lottery.Bet{}
+	//bet.AgencyId
+	bet.FirstName, _ = p.recvString()
+	bet.LastName, _ = p.recvString()
+	buffer, _ := safe_socket.RecvAll(p.skt, 12)
+	bet.Document = int(binary.BigEndian.Uint32(buffer[:4]))
+	bet.Birthdate = parseBirthdate(buffer[4:8])
+	bet.Number = int(binary.BigEndian.Uint32(buffer[8:]))
+
+	return bet, nil
+}
+
+func (p *Protocol) recvString() (string, error) {
+	lenBuf, err := safe_socket.RecvAll(p.skt, 2)
+	if err != nil {
+		return "", err
+	}
+	length := int(binary.BigEndian.Uint16(lenBuf))
+	data, err := safe_socket.RecvAll(p.skt, length)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func parseBirthdate(buffer []byte) string {
+	year := binary.BigEndian.Uint16(buffer[:2])
+	month := buffer[2]
+	day := buffer[3]
+	return fmt.Sprintf("%04d-%02d-%02d", year, month, day)
 }
