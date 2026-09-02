@@ -13,17 +13,17 @@ class Server:
         self.storage_path = storage_path
 
     def _handle_client(self, client_socket):
+        lottery = Lottery(self.storage_path)
         protocol = Protocol(client_socket)
         try:
-            bets = []
             while True:
+                bets = []
                 flag = protocol.more_bets()
                 if not flag: break
                 bet = protocol.recv_bet()
                 bets.append(bet)
+                lottery.store_bets(bets)
 
-            lottery = Lottery(self.storage_path)
-            lottery.store_bets(bets)
 
             winners = [bet for bet in lottery.load_bets() if lottery.has_won(bet)]
             for winner in winners:
