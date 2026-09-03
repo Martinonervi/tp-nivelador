@@ -1,4 +1,3 @@
-import struct
 import safe_socket
 from lottery.bet import Bet
 
@@ -8,46 +7,45 @@ class Protocol:
 
     def send_bet(self, bet):
         buf = b''
-        buf += struct.pack('>B', 0x01)
-        buf += struct.pack('>B', bet.agency_id)
+        buf += (0x01).to_bytes(1, byteorder='big')
+        buf += bet.agency_id.to_bytes(1, byteorder='big')
 
         first_name_bytes = bet.first_name.encode('utf-8')
-        buf += struct.pack('>H', len(first_name_bytes)) + first_name_bytes
+        buf += len(first_name_bytes).to_bytes(2, byteorder='big') + first_name_bytes
 
         last_name_bytes = bet.last_name.encode('utf-8')
-        buf += struct.pack('>H', len(last_name_bytes)) + last_name_bytes
+        buf += len(last_name_bytes).to_bytes(2, byteorder='big') + last_name_bytes
 
-        buf += struct.pack('>I', bet.document)
+        buf += bet.document.to_bytes(4, byteorder='big')
         buf += self._pack_birthdate(bet.birthdate)
-        buf += struct.pack('>I', bet.number)
+        buf += bet.number.to_bytes(4, byteorder='big')
         return safe_socket.send_all(self.skt, buf)
 
     def _pack_birthdate(self, birthdate):
         buf = b''
         year, month, day = map(int, birthdate.split('-'))
-        buf += struct.pack('>H', year)
-        buf += struct.pack('>B', month)
-        buf += struct.pack('>B', day)
+        buf += year.to_bytes(2, byteorder='big')
+        buf += month.to_bytes(1, byteorder='big')
+        buf += day.to_bytes(1, byteorder='big')
         return buf
-        
+
     def recv_bet(self):
-        agency_id = struct.unpack('>B', safe_socket.recv_all(self.skt, 1))[0]
+        agency_id = int.from_bytes(safe_socket.recv_all(self.skt, 1), byteorder='big')
         first_name = self._recv_string()
         last_name = self._recv_string()
 
-        #solo quedan cosas fijas, las recibo
         buffer = safe_socket.recv_all(self.skt, 12)
-        document = struct.unpack('>I', buffer[:4])[0]
+        document = int.from_bytes(buffer[:4], byteorder='big')
         birthdate = self._unpack_birthdate(buffer[4:8])
-        number = struct.unpack('>I', buffer[8:])[0]
+        number = int.from_bytes(buffer[8:], byteorder='big')
         return Bet(agency_id, first_name, last_name, document, birthdate, number)
 
     def _recv_string(self):
-        length = struct.unpack('>H', safe_socket.recv_all(self.skt, 2))[0]
+        length = int.from_bytes(safe_socket.recv_all(self.skt, 2), byteorder='big')
         return safe_socket.recv_all(self.skt, length).decode('utf-8')
 
     def _unpack_birthdate(self, buffer):
-        year = struct.unpack('>H', buffer[:2])[0]
+        year = int.from_bytes(buffer[:2], byteorder='big')
         month = buffer[2]
         day = buffer[3]
         return f"{year:04d}-{month:02d}-{day:02d}"
@@ -63,12 +61,3 @@ class Protocol:
 
     def close(self):
         return self.skt.close()
-
-'''
-struct.unpack(formato, bytes) 
-formato: > big endian 
-         B 1 bytes (uint8) 
-         H 2 bytes (uint16)
-         I 4 bytes (uint32)  
-=> siempre devuelve una tupla, podria hacer IH y que me devuelva una tupla de ambos valores
-'''
