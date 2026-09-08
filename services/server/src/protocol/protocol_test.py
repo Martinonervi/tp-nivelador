@@ -1,31 +1,25 @@
-import socket
-import struct
 import unittest
+
 from protocol import Protocol
-from src_frozen.lottery.bet import Bet
+from lottery.bet import Bet
 
 
 class TestProtocol(unittest.TestCase):
-    def test_recv_bet(self):
-        client, server = socket.socketpair()
+    def test_serialize_deserialize_bets(self):
+        sent = [
+            Bet(1, "Martino", "Nervi", 12345678, "1999-03-01", 7574),
+            Bet(1, "Cirilo", "Pato", 91011113, "2004-05-10", 1033),
+        ]
+        protocol = Protocol(None)
 
-        buf = b''
-        buf += struct.pack('>B', 1)  # agency_id
-        buf += struct.pack('>H', len("Santiago Lionel")) + b"Santiago Lionel"  # first_name
-        buf += struct.pack('>H', len("Lorca")) + b"Lorca"  # last_name
-        buf += struct.pack('>I', 30904465)  # document
-        buf += struct.pack('>H', 1999) + bytes([3, 17])  # birthdate
-        buf += struct.pack('>I', 7574)  # number
+        payload = len(sent).to_bytes(2, "big")
+        for bet in sent:
+            payload += protocol._serialize_bet(bet)
 
-        client.sendall(buf)
-        client.close()
+        received = protocol._deserialize_bets(payload)
 
-        p = Protocol(server)
-        received = p.recv_bet()
-        server.close()
-
-        self.assertEqual(received, Bet(1, "Santiago Lionel", "Lorca", 30904465, "1999-03-17", 7574))
+        self.assertEqual(received, sent)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

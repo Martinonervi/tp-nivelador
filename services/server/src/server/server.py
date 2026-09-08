@@ -5,6 +5,7 @@ import safe_socket
 from protocol import Protocol
 from lottery import Lottery
 
+BATCH_SIZE = 1
 
 class Server:
     def __init__(self, server_host: str, server_port: int, storage_path: str) -> None:
@@ -17,20 +18,17 @@ class Server:
         protocol = Protocol(client_socket)
         try:
             while True:
-                bets = []
-                flag = protocol.more_bets()
-                if not flag: break
-                bet = protocol.recv_bet()
-                bets.append(bet)
+                bets, is_fin = protocol.recv_bets()
+                if is_fin: break
                 lottery.store_bets(bets)
 
-
             winners = [bet for bet in lottery.load_bets() if lottery.has_won(bet)]
-            for winner in winners:
-                protocol.send_bet(winner)
+
+            for i in range(0, len(winners), BATCH_SIZE):
+                protocol.send_bets(winners[i:i + BATCH_SIZE]) #python corta el slice si se pasa
             protocol.send_no_more_bets()
         except Exception as e:
-            logger.error("handle-client", logger.LogResult.fail)
+            logger.error("handle-client", logger.LogResult.fail, "err", e)
         finally:
             protocol.close()
 
@@ -50,31 +48,3 @@ class Server:
                 logger.info(action, logger.LogResult.success)
 
                 self._handle_client(client_socket)
-
-
-'''
-    def _handle_client(self, client_socket):
-        action = "handle-client"
-        message_amount = 0
-        try:
-            logger.info(action, logger.LogResult.in_progress)
-            while True:
-                client_message = safe_socket.recv_all(
-                    client_socket, _ECHO_SERVER_MESSAGE_SIZE
-                )
-                if not client_message:
-                    logger.info(
-                        action,
-                        logger.LogResult.success,
-                        "messages-amount",
-                        message_amount,
-                    )
-                    return
-                message_amount += 1
-                safe_socket.send_all(client_socket, client_message)
-        except Exception as e:
-            logger.error(
-                action, logger.LogResult.fail, "messages-amount", message_amount
-            )
-            raise e
-        '''

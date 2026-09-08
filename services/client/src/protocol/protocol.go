@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -9,6 +10,32 @@ import (
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/lottery"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
 )
+
+const (
+	MSG_BATCH byte = 0x00
+	MSG_FIN   byte = 0x01
+
+	HEADER_SIZE      = 3
+	MAX_PAYLOAD_SIZE = 65535
+)
+
+// PROTOCOLO
+// => Header(3B) + payload(variable)
+// Header:
+//		msgType 1B
+//		lenPayload 2B
+//
+// Payload:
+//	lenBets 2B
+//  N bets:
+//		BetAgency 1B
+//		lenStrFistName 2B
+//		firstName (variable)
+//		lenStrLastName 2B
+//		lastName (variable)
+//		Document 4B
+//		birthday 4B
+//		betNumber 4B
 
 type Protocol struct {
 	skt net.Conn
@@ -25,23 +52,50 @@ func (p *Protocol) Close() error {
 // SEND
 
 func (p *Protocol) SendNoMoreBets() error {
-	return safe_socket.SendAll(p.skt, []byte{0x00})
+	return p.sendFrame(MSG_FIN, nil)
 }
 
-func (p *Protocol) SendBet(bet lottery.Bet) error {
-	var buffer []byte // podria ser mas optimo si le asigno la length
-	buffer = append(buffer, 0x01)
+func (p *Protocol) SendBets(listOfBets []lottery.Bet) error {
+	var payload []byte
+	payload = binary.BigEndian.AppendUint16(payload, uint16(len(listOfBets)))
+
+	for _, bet := range listOfBets {
+		buffer, err := serializeBet(bet)
+		if err != nil {
+			return err
+		}
+		payload = append(payload, buffer...)
+	}
+
+	if err := p.sendFrame(MSG_BATCH, payload); err != nil {
+		return err
+	}
+	//deberia esperar ack del servidor??
+	return nil
+}
+
+func serializeBet(bet lottery.Bet) ([]byte, error) {
+	var buffer []byte
 	buffer = append(buffer, byte(bet.AgencyId))
 	buffer = appendString(buffer, bet.FirstName)
 	buffer = appendString(buffer, bet.LastName)
 	buffer = appendDocument(buffer, bet.Document)
-	var err error
-	buffer, err = appendBirthdate(buffer, bet.Birthdate)
+	buffer, err := appendBirthdate(buffer, bet.Birthdate)
 	if err != nil {
-		return err
+		return buffer, err
 	}
 	buffer = appendBetNumber(buffer, bet.Number)
-	return safe_socket.SendAll(p.skt, buffer)
+	return buffer, nil
+}
+
+func (p *Protocol) sendFrame(msgType byte, payload []byte) error {
+	if len(payload) > MAX_PAYLOAD_SIZE {
+		return fmt.Errorf("payload too large: %d bytes", len(payload))
+	}
+	frame := []byte{msgType}
+	frame = binary.BigEndian.AppendUint16(frame, uint16(len(payload)))
+	frame = append(frame, payload...)
+	return safe_socket.SendAll(p.skt, frame)
 }
 
 func appendString(buffer []byte, s string) []byte {
@@ -71,7 +125,7 @@ func appendBirthdate(buffer []byte, birthdate string) ([]byte, error) {
 }
 
 func appendBetNumber(buffer []byte, betNumber int) []byte {
-	buf := make([]byte, 4) //podria usar 2
+	buf := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf, uint32(betNumber))
 	buffer = append(buffer, buf...)
 	return buffer
@@ -79,55 +133,116 @@ func appendBetNumber(buffer []byte, betNumber int) []byte {
 
 // RECV
 
-func (p *Protocol) RecvBet() (lottery.Bet, error) {
+func (p *Protocol) RecvWinners() ([]lottery.Bet, bool, error) {
+	msgType, payload, err := p.recvFrame()
+	if err != nil {
+		return nil, false, err
+	}
+
+	switch msgType {
+	case MSG_FIN:
+		return nil, false, nil
+	case MSG_BATCH:
+		winners, err := deserializeBets(payload)
+		if err != nil {
+			return nil, false, err
+		}
+		return winners, true, nil
+	default:
+		return nil, false, fmt.Errorf("unknown msgType: %d", msgType)
+	}
+}
+
+func (p *Protocol) recvFrame() (byte, []byte, error) {
+	header, err := safe_socket.RecvAll(p.skt, HEADER_SIZE)
+	if err != nil {
+		return 0, nil, err
+	}
+	payloadLen := int(binary.BigEndian.Uint16(header[1:3]))
+	if payloadLen == 0 {
+		return header[0], nil, nil
+	}
+	payload, err := safe_socket.RecvAll(p.skt, payloadLen)
+	if err != nil {
+		return 0, nil, err
+	}
+	return header[0], payload, nil
+}
+
+var errShortPayload = errors.New("payload shorter than expected")
+
+func deserializeBets(payload []byte) ([]lottery.Bet, error) {
+	if len(payload) < 2 {
+		return nil, errShortPayload
+	}
+
+	countOfBets := int(binary.BigEndian.Uint16(payload[0:2]))
+	offset := 2
+
+	bets := make([]lottery.Bet, 0, countOfBets)
+	for range countOfBets {
+		bet, next, err := deserializeBet(payload, offset)
+		if err != nil {
+			return nil, err
+		}
+		bets = append(bets, bet)
+		offset = next
+	}
+
+	if offset != len(payload) {
+		return nil, fmt.Errorf("%d bytes left unparsed", len(payload)-offset)
+	}
+
+	return bets, nil
+}
+
+func deserializeBet(payload []byte, offset int) (lottery.Bet, int, error) {
 	bet := lottery.Bet{}
-	aux, err := safe_socket.RecvAll(p.skt, 1)
-	if err != nil {
-		return bet, err
+
+	if offset+1 > len(payload) {
+		return bet, offset, errShortPayload
 	}
-	bet.AgencyId = int(aux[0])
-	bet.FirstName, err = p.recvString()
+	bet.AgencyId = int(payload[offset])
+	offset += 1
+
+	firstName, offset, err := deserializeString(payload, offset)
 	if err != nil {
-		return bet, err
+		return bet, offset, err
 	}
-	bet.LastName, err = p.recvString()
+	bet.FirstName = firstName
+	lastName, offset, err := deserializeString(payload, offset)
 	if err != nil {
-		return bet, err
+		return bet, offset, err
 	}
-	buffer, err := safe_socket.RecvAll(p.skt, 12)
-	if err != nil {
-		return bet, err
+	bet.LastName = lastName
+
+	if offset+12 > len(payload) {
+		return bet, offset, errShortPayload
 	}
+	buffer := payload[offset : offset+12]
 	bet.Document = int(binary.BigEndian.Uint32(buffer[:4]))
-	bet.Birthdate = parseBirthdate(buffer[4:8])
+	bet.Birthdate = deserializeBirthdate(buffer[4:8])
 	bet.Number = int(binary.BigEndian.Uint32(buffer[8:]))
-	return bet, nil
+	offset += 12
+
+	return bet, offset, nil
 }
 
-func (p *Protocol) recvString() (string, error) {
-	lenBuf, err := safe_socket.RecvAll(p.skt, 2)
-	if err != nil {
-		return "", err
+func deserializeString(payload []byte, offset int) (string, int, error) {
+	if offset+2 > len(payload) {
+		return "", offset, errShortPayload
 	}
-	length := int(binary.BigEndian.Uint16(lenBuf))
-	data, err := safe_socket.RecvAll(p.skt, length)
-	if err != nil {
-		return "", err
+	length := int(binary.BigEndian.Uint16(payload[offset : offset+2]))
+	offset += 2
+	if offset+length > len(payload) {
+		return "", offset, errShortPayload
 	}
-	return string(data), nil
+	return string(payload[offset : offset+length]), offset + length, nil
 }
 
-func parseBirthdate(buffer []byte) string {
+func deserializeBirthdate(buffer []byte) string {
 	year := binary.BigEndian.Uint16(buffer[:2])
 	month := buffer[2]
 	day := buffer[3]
 	return fmt.Sprintf("%04d-%02d-%02d", year, month, day)
-}
-
-func (p *Protocol) MoreBets() (bool, error) {
-	buf, err := safe_socket.RecvAll(p.skt, 1)
-	if err != nil {
-		return false, err
-	}
-	return buf[0] != 0, nil
 }

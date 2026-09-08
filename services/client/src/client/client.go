@@ -23,6 +23,7 @@ type ClientConfig struct {
 	AgencyId   string
 	InputFile  string
 	OutputFile string
+	BatchSize  int
 }
 
 type Client struct {
@@ -91,15 +92,19 @@ func (client *Client) Run() error {
 		return err
 	}
 
+	listOfBets := []lottery.Bet{}
 	for scanner.Scan() {
 		line := scanner.Text()
-
 		fields := strings.Split(line, ",")
+		if len(fields) < 5 {
+			logger.Error("bad line", logger.Fail, line)
+			continue
+		}
 		document, err := strconv.Atoi(fields[2])
 		if err != nil {
 			return err
 		}
-		number, err := strconv.Atoi(fields[4])
+		betNumber, err := strconv.Atoi(fields[4])
 		if err != nil {
 			return err
 		}
@@ -110,14 +115,25 @@ func (client *Client) Run() error {
 			LastName:  fields[1],
 			Document:  document,
 			Birthdate: fields[3],
-			Number:    number,
+			Number:    betNumber,
 		}
+		listOfBets = append(listOfBets, bet)
 
-		err = client.proto.SendBet(bet)
-		if err != nil {
+		if len(listOfBets) == client.config.BatchSize {
+			if err := client.proto.SendBets(listOfBets); err != nil {
+				return err
+			}
+			listOfBets = []lottery.Bet{}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	if len(listOfBets) > 0 {
+		if err := client.proto.SendBets(listOfBets); err != nil {
 			return err
 		}
-
 	}
 
 	err = client.proto.SendNoMoreBets()
@@ -126,21 +142,16 @@ func (client *Client) Run() error {
 	}
 
 	for {
-		moreBets, err := client.proto.MoreBets()
+		ListOfBets, moreBets, err := client.proto.RecvWinners()
 		if err != nil {
+			return err
+		}
+		if err := writeBetsToFile(dataWriter, ListOfBets); err != nil {
 			return err
 		}
 		if !moreBets {
 			break
 		}
-		bet, err := client.proto.RecvBet()
-		if err != nil {
-			return err
-		}
-		if err := writeBetToFile(dataWriter, bet); err != nil {
-			return err
-		}
-
 	}
 
 	if err := dataWriter.Flush(); err != nil {
@@ -151,8 +162,14 @@ func (client *Client) Run() error {
 	return nil
 }
 
-func writeBetToFile(writer *bufio.Writer, bet lottery.Bet) error {
-	line := fmt.Sprintf("%s,%s,%d,%s,%d\n", bet.FirstName, bet.LastName, bet.Document, bet.Birthdate, bet.Number)
-	_, err := writer.WriteString(line)
-	return err
+func writeBetsToFile(writer *bufio.Writer, bet []lottery.Bet) error {
+	for _, bet := range bet {
+		line := fmt.Sprintf("%s,%s,%d,%s,%d\n", bet.FirstName, bet.LastName, bet.Document, bet.Birthdate, bet.Number)
+		_, err := writer.WriteString(line)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+
 }
