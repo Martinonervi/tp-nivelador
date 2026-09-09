@@ -1,14 +1,11 @@
 import socket
 
-# TODO: Complete with a short-read/short-write tolerant implementation
-
-
 def recv_all(socket: socket.socket, size):
     buffer = b""
     while len(buffer) < size:
         chunk = socket.recv(size - len(buffer))
-        if not chunk: # si recibo 0 es senal de que cerro correctame
-            if not buffer: # si me quede a la mitad = error
+        if not chunk:
+            if not buffer:
                 return b""
             raise RuntimeError("Socket connection closed")
         buffer += chunk
@@ -18,10 +15,5 @@ def recv_all(socket: socket.socket, size):
 def send_all(socket: socket.socket, bytes):
     sent = 0
     while sent < len(bytes):
-        n = socket.send(bytes[sent:])
-        sent += n
-        if n == 0 and sent != 0:
-            raise RuntimeError("Socket connection closed") # cerro de la nada
-        if n == 0: # cerro bien
-            return sent
+        sent += socket.send(bytes[sent:])
     return sent
