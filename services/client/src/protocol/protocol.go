@@ -14,6 +14,7 @@ import (
 const (
 	MSG_BATCH byte = 0x00
 	MSG_FIN   byte = 0x01
+	MSG_ACK   byte = 0x02
 
 	HEADER_SIZE      = 3
 	MAX_PAYLOAD_SIZE = 65535
@@ -51,6 +52,10 @@ func (p *Protocol) Close() error {
 
 // SEND
 
+func (p *Protocol) SendAck() error {
+	return p.sendFrame(MSG_ACK, nil)
+}
+
 func (p *Protocol) SendNoMoreBets() error {
 	return p.sendFrame(MSG_FIN, nil)
 }
@@ -70,8 +75,7 @@ func (p *Protocol) SendBets(listOfBets []lottery.Bet) error {
 	if err := p.sendFrame(MSG_BATCH, payload); err != nil {
 		return err
 	}
-	//deberia esperar ack del servidor??
-	return nil
+	return p.recvAck()
 }
 
 func serializeBet(bet lottery.Bet) ([]byte, error) {
@@ -129,6 +133,17 @@ func appendBetNumber(buffer []byte, betNumber int) []byte {
 	binary.BigEndian.PutUint32(buf, uint32(betNumber))
 	buffer = append(buffer, buf...)
 	return buffer
+}
+
+func (p *Protocol) recvAck() error {
+	msgType, _, err := p.recvFrame()
+	if err != nil {
+		return err
+	}
+	if msgType != MSG_ACK {
+		return fmt.Errorf("expected ACK, got msgType %d", msgType)
+	}
+	return nil
 }
 
 // RECV

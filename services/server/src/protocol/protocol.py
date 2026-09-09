@@ -3,6 +3,7 @@ from lottery.bet import Bet
 
 MSG_BATCH = 0x00
 MSG_FIN = 0x01
+MSG_ACK = 0x02
 
 HEADER_SIZE = 3
 MAX_PAYLOAD_SIZE = 65535
@@ -48,6 +49,14 @@ class Protocol:
         year, month, day = map(int, birthdate.split("-"))
         return year.to_bytes(2, "big") + month.to_bytes(1, "big") + day.to_bytes(1, "big")
     
+    def recv_ack(self):
+        msg_type, _ = self._recv_frame()
+        if msg_type != MSG_ACK:
+            raise ValueError("expected ACK, got msgType %d", msg_type)
+
+    def send_ack(self):
+        self._send_frame(MSG_ACK)
+
     def send_no_more_bets(self):
         self._send_frame(MSG_FIN)
 

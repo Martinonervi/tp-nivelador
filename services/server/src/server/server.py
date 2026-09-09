@@ -32,6 +32,7 @@ class Server:
                     agency_id = bets[0].agency_id
                 with self.storage_lock:
                     lottery.store_bets(bets)
+                protocol.send_ack()
 
             with self.agency_quorum_lock:
                 self._agencies_done += 1
@@ -44,6 +45,7 @@ class Server:
 
             for i in range(0, len(winners), BATCH_SIZE):
                 protocol.send_bets(winners[i:i + BATCH_SIZE]) #python corta el slice si se pasa
+                protocol.recv_ack()
             protocol.send_no_more_bets()
         except Exception as e:
             logger.error("handle-client", logger.LogResult.fail, "err", e)

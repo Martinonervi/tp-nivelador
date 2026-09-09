@@ -146,11 +146,15 @@ func (client *Client) Run() error {
 		if err != nil {
 			return err
 		}
+		if !moreBets {
+			break
+		}
 		if err := writeBetsToFile(dataWriter, ListOfBets); err != nil {
 			return err
 		}
-		if !moreBets {
-			break
+
+		if err := client.proto.SendAck(); err != nil {
+			return err
 		}
 	}
 
