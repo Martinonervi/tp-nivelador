@@ -18,11 +18,12 @@ TEST_CASES = [
     ForcedExit,
     OutputFiles,
     Concurrency,
-    MemoryProfile,
+
     SigtermHandling,
     ClientShortReadWrite,
     ServerShortReadWrite,
     Batching,
+    MemoryProfile
 ]
 MESSAGE_PADDING = 32
 
