@@ -3,16 +3,22 @@ package main
 import (
 	"errors"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 
-	client "github.com/7574-sistemas-distribuidos/tp-nivelador/src/client"
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/client"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
 )
 
 func loadConfig() (client.ClientConfig, error) {
-	agencyId := os.Getenv("AGENCY_ID")
-	if agencyId == "" {
+	agencyIdRaw := os.Getenv("AGENCY_ID")
+	if agencyIdRaw == "" {
 		return client.ClientConfig{}, errors.New("AGENCY_ID environment variable is required")
+	}
+	agencyId, err := strconv.Atoi(agencyIdRaw)
+	if err != nil {
+		return client.ClientConfig{}, errors.New("AGENCY_ID must be a number")
 	}
 
 	serverHost := os.Getenv("SERVER_HOST")
@@ -55,6 +61,9 @@ func loadConfig() (client.ClientConfig, error) {
 }
 
 func run() int {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGTERM)
+
 	config, err := loadConfig()
 	if err != nil {
 		logger.Error("load-config", logger.Fail, "err", err)
@@ -66,6 +75,14 @@ func run() int {
 		logger.Error("client-new", logger.Fail, "err", err)
 		return 1
 	}
+
+	go func() {
+		<-sigs
+		logger.Info("shutdown", logger.InProgress)
+		if err := client.Close(); err != nil {
+			logger.Error("shutdown", logger.Fail, "err", err)
+		}
+	}()
 
 	if err := client.Run(); err != nil {
 		logger.Error("client-run", logger.Fail, "err", err)

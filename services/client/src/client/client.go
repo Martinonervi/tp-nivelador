@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
@@ -20,15 +21,16 @@ const CONNECTION_ATTEMPS_DELAY_MS = 200
 type ClientConfig struct {
 	ServerHost string
 	ServerPort string
-	AgencyId   string
+	AgencyId   int
 	InputFile  string
 	OutputFile string
 	BatchSize  int
 }
 
 type Client struct {
-	config ClientConfig
-	proto  *protocol.Protocol
+	config  ClientConfig
+	proto   *protocol.Protocol
+	running atomic.Bool
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -39,7 +41,17 @@ func NewClient(config ClientConfig) (*Client, error) {
 	}
 
 	client := &Client{config: config, proto: protocol}
+	client.running.Store(true)
 	return client, nil
+}
+
+func (client *Client) Run() error {
+	err := client.run()
+	if err != nil && !client.running.Load() {
+		logger.Info("shutdown", logger.Success, "agency-id", client.config.AgencyId)
+		return nil
+	}
+	return err
 }
 
 func connectToServer(host, port string) (*protocol.Protocol, error) {
@@ -67,9 +79,9 @@ func connectToServer(host, port string) (*protocol.Protocol, error) {
 	return p, err
 }
 
-func (client *Client) Run() error {
+func (client *Client) run() error {
 	defer client.proto.Close()
-	const mainAction = "test-echo-server"
+	const mainAction = "client run"
 
 	inputFile, err := os.Open(client.config.InputFile)
 	if err != nil {
@@ -87,53 +99,12 @@ func (client *Client) Run() error {
 	dataWriter := bufio.NewWriter(outputFile)
 
 	scanner := bufio.NewScanner(inputFile)
-	agencyId, err := strconv.Atoi(client.config.AgencyId)
 	if err != nil {
 		return err
 	}
 
-	listOfBets := []lottery.Bet{}
-	for scanner.Scan() {
-		line := scanner.Text()
-		fields := strings.Split(line, ",")
-		if len(fields) < 5 {
-			logger.Error("bad line", logger.Fail, line)
-			continue
-		}
-		document, err := strconv.Atoi(fields[2])
-		if err != nil {
-			return err
-		}
-		betNumber, err := strconv.Atoi(fields[4])
-		if err != nil {
-			return err
-		}
-
-		bet := lottery.Bet{
-			AgencyId:  agencyId,
-			FirstName: fields[0],
-			LastName:  fields[1],
-			Document:  document,
-			Birthdate: fields[3],
-			Number:    betNumber,
-		}
-		listOfBets = append(listOfBets, bet)
-
-		if len(listOfBets) == client.config.BatchSize {
-			if err := client.proto.SendBets(listOfBets); err != nil {
-				return err
-			}
-			listOfBets = []lottery.Bet{}
-		}
-	}
-	if err := scanner.Err(); err != nil {
+	if err := client.sendBets(scanner, client.config.AgencyId); err != nil {
 		return err
-	}
-
-	if len(listOfBets) > 0 {
-		if err := client.proto.SendBets(listOfBets); err != nil {
-			return err
-		}
 	}
 
 	err = client.proto.SendNoMoreBets()
@@ -141,6 +112,64 @@ func (client *Client) Run() error {
 		return err
 	}
 
+	err = client.recvWinners(dataWriter)
+	if err != nil {
+		return err
+	}
+
+	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
+	return nil
+}
+func (client *Client) sendBets(scanner *bufio.Scanner, agencyId int) error {
+	listOfBets := []lottery.Bet{}
+	for scanner.Scan() {
+		bet, err := parseBet(scanner.Text(), agencyId)
+		if err != nil {
+			logger.Error("bad-line", logger.Fail, "err", err)
+			continue
+		}
+		listOfBets = append(listOfBets, bet)
+
+		if len(listOfBets) == client.config.BatchSize {
+			if err := client.proto.SendBets(listOfBets); err != nil {
+				return err
+			}
+			listOfBets = listOfBets[:0]
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if len(listOfBets) > 0 {
+		return client.proto.SendBets(listOfBets)
+	}
+	return nil
+}
+
+func parseBet(line string, agencyId int) (lottery.Bet, error) {
+	fields := strings.Split(line, ",")
+	if len(fields) < 5 {
+		return lottery.Bet{}, fmt.Errorf("invalid line: %q", line)
+	}
+	document, err := strconv.Atoi(fields[2])
+	if err != nil {
+		return lottery.Bet{}, err
+	}
+	betNumber, err := strconv.Atoi(fields[4])
+	if err != nil {
+		return lottery.Bet{}, err
+	}
+	return lottery.Bet{
+		AgencyId:  agencyId,
+		FirstName: fields[0],
+		LastName:  fields[1],
+		Document:  document,
+		Birthdate: fields[3],
+		Number:    betNumber,
+	}, nil
+}
+
+func (client *Client) recvWinners(writer *bufio.Writer) error {
 	for {
 		ListOfBets, moreBets, err := client.proto.RecvWinners()
 		if err != nil {
@@ -149,7 +178,8 @@ func (client *Client) Run() error {
 		if !moreBets {
 			break
 		}
-		if err := writeBetsToFile(dataWriter, ListOfBets); err != nil {
+
+		if err := writeBetsToFile(writer, ListOfBets); err != nil {
 			return err
 		}
 
@@ -158,11 +188,10 @@ func (client *Client) Run() error {
 		}
 	}
 
-	if err := dataWriter.Flush(); err != nil {
+	if err := writer.Flush(); err != nil {
 		logger.Error("flush-output", logger.Fail)
 		return err
 	}
-	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
 	return nil
 }
 
@@ -175,5 +204,9 @@ func writeBetsToFile(writer *bufio.Writer, bet []lottery.Bet) error {
 		}
 	}
 	return nil
+}
 
+func (client *Client) Close() error {
+	client.running.Store(false)
+	return client.proto.Close()
 }

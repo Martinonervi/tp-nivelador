@@ -26,7 +26,7 @@ class Protocol:
 
     def _send_frame(self, msg_type, payload=b""):
         if len(payload) > MAX_PAYLOAD_SIZE:
-            raise ValueError(f"payload large: {len(payload)} bytes")
+            raise ValueError(f"payload too large: {len(payload)} bytes")
         frame = msg_type.to_bytes(1, "big")
         frame += len(payload).to_bytes(2, "big")
         frame += payload
@@ -52,7 +52,7 @@ class Protocol:
     def recv_ack(self):
         msg_type, _ = self._recv_frame()
         if msg_type != MSG_ACK:
-            raise ValueError("expected ACK, got msgType %d", msg_type)
+            raise ValueError(f"expected ACK, got msg_type {msg_type}")
 
     def send_ack(self):
         self._send_frame(MSG_ACK)
@@ -70,7 +70,7 @@ class Protocol:
         elif msg_type == MSG_BATCH:
             return self._deserialize_bets(payload), False
         else:
-            raise ValueError(f"opcode desconocido: {msg_type}")
+            raise ValueError(f"unknown msgType: {msg_type}")
 
     def _recv_frame(self):
         header = safe_socket.recv_all(self.skt, HEADER_SIZE)
