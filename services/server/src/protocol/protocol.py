@@ -4,6 +4,7 @@ from lottery.bet import Bet
 MSG_BATCH = 0x00
 MSG_FIN = 0x01
 MSG_ACK = 0x02
+MSG_HELLO = 0x03
 
 HEADER_SIZE = 3
 MAX_PAYLOAD_SIZE = 65535
@@ -33,8 +34,7 @@ class Protocol:
         safe_socket.send_all(self.skt, frame)
 
     def _serialize_bet(self, bet):
-        buf = bet.agency_id.to_bytes(1, "big")
-        buf += self._serialize_string(bet.first_name)
+        buf = self._serialize_string(bet.first_name)
         buf += self._serialize_string(bet.last_name)
         buf += bet.document.to_bytes(4, "big")
         buf += self._serialize_birthdate(bet.birthdate)
@@ -63,12 +63,20 @@ class Protocol:
 
     # RECV
 
-    def recv_bets(self): # devuelve (bets, is_fin)
+    def recv_hello(self):
+        msg_type, payload = self._recv_frame()
+        if msg_type != MSG_HELLO:
+            raise ValueError(f"expected MSG_HELLO, got msgType {msg_type}")
+        if len(payload) != 1:
+            raise ValueError(SHORT_PAYLOAD)
+        return payload[0]
+
+    def recv_bets(self, agency_id): # devuelve (bets, is_fin)
         msg_type, payload = self._recv_frame()
         if msg_type == MSG_FIN:
             return [], True
         elif msg_type == MSG_BATCH:
-            return self._deserialize_bets(payload), False
+            return self._deserialize_bets(payload, agency_id), False
         else:
             raise ValueError(f"unknown msgType: {msg_type}")
 
@@ -80,7 +88,7 @@ class Protocol:
         payload = safe_socket.recv_all(self.skt, payload_len) if payload_len else b""
         return header[0], payload
 
-    def _deserialize_bets(self, payload):
+    def _deserialize_bets(self, payload, agency_id):
         if len(payload) < 2:
             raise ValueError(SHORT_PAYLOAD)
 
@@ -89,19 +97,14 @@ class Protocol:
 
         bets = []
         for _ in range(count_of_bets):
-            bet, offset = self._deserialize_bet(payload, offset)
+            bet, offset = self._deserialize_bet(payload, offset, agency_id)
             bets.append(bet)
 
         if offset != len(payload):
             raise ValueError(f"{len(payload) - offset} bytes left unparsed")
         return bets
 
-    def _deserialize_bet(self, payload, offset):
-        if offset + 1 > len(payload):
-            raise ValueError(SHORT_PAYLOAD)
-        agency_id = payload[offset]
-        offset += 1
-
+    def _deserialize_bet(self, payload, offset, agency_id):
         first_name, offset = self._deserialize_string(payload, offset)
         last_name, offset = self._deserialize_string(payload, offset)
 

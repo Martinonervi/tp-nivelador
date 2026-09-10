@@ -103,6 +103,10 @@ func (client *Client) run() error {
 		return err
 	}
 
+	if err := client.proto.SendHello(client.config.AgencyId); err != nil {
+		return err
+	}
+
 	if err := client.sendBets(scanner, client.config.AgencyId); err != nil {
 		return err
 	}

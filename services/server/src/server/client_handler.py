@@ -19,14 +19,12 @@ class ClientHandler:
         action = "handle-client"
         signal.signal(signal.SIGTERM, self._shutdown)
         lottery = Lottery(self.storage_path)
-        agency_id = None
         try:
+            agency_id = self.protocol.recv_hello()
             while True:
-                bets, is_fin = self.protocol.recv_bets()
+                bets, is_fin = self.protocol.recv_bets(agency_id)
                 if is_fin:
                     break
-                if bets:
-                    agency_id = bets[0].agency_id
                 with self.storage_lock:
                     lottery.store_bets(bets)
                 self.protocol.send_ack()

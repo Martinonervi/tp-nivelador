@@ -15,6 +15,7 @@ const (
 	MSG_BATCH byte = 0x00
 	MSG_FIN   byte = 0x01
 	MSG_ACK   byte = 0x02
+	MSG_HELLO byte = 0x03
 
 	HEADER_SIZE      = 3
 	MAX_PAYLOAD_SIZE = 65535
@@ -26,11 +27,13 @@ const (
 //		msgType 1B
 //		lenPayload 2B
 //
-// Payload:
+// Payload de MSG_HELLO:
+//		agencyId 1B
+//
+// Payload de MSG_BATCH:
 //	lenBets 2B
 //  N bets:
-//		BetAgency 1B
-//		lenStrFistName 2B
+//		lenStrFirstName 2B
 //		firstName (variable)
 //		lenStrLastName 2B
 //		lastName (variable)
@@ -54,6 +57,10 @@ func (p *Protocol) Close() error {
 
 func (p *Protocol) SendAck() error {
 	return p.sendFrame(MSG_ACK, nil)
+}
+
+func (p *Protocol) SendHello(agencyId int) error {
+	return p.sendFrame(MSG_HELLO, []byte{byte(agencyId)})
 }
 
 func (p *Protocol) SendNoMoreBets() error {
@@ -80,7 +87,6 @@ func (p *Protocol) SendBets(listOfBets []lottery.Bet) error {
 
 func serializeBet(bet lottery.Bet) ([]byte, error) {
 	var buffer []byte
-	buffer = append(buffer, byte(bet.AgencyId))
 	buffer = appendString(buffer, bet.FirstName)
 	buffer = appendString(buffer, bet.LastName)
 	buffer = appendDocument(buffer, bet.Document)
@@ -213,12 +219,6 @@ func deserializeBets(payload []byte) ([]lottery.Bet, error) {
 
 func deserializeBet(payload []byte, offset int) (lottery.Bet, int, error) {
 	bet := lottery.Bet{}
-
-	if offset+1 > len(payload) {
-		return bet, offset, errShortPayload
-	}
-	bet.AgencyId = int(payload[offset])
-	offset += 1
 
 	firstName, offset, err := deserializeString(payload, offset)
 	if err != nil {
