@@ -8,8 +8,6 @@ from lottery import Lottery
 from .client_handler import ClientHandler
 import signal
 
-JOIN_TIMEOUT_SECONDS = 3
-
 class Server:
     def __init__(self, server_host: str, server_port: int, storage_path: str, agency_quorum_min: int) -> None:
         self.server_host = server_host
@@ -63,7 +61,7 @@ class Server:
         for process in self.children:
             process.terminate()
         for process in self.children:
-            process.join(timeout=JOIN_TIMEOUT_SECONDS)
+            process.join()
         if self.server_socket is not None:
             self.server_socket.close()
         logger.info(action, logger.LogResult.success, "children", len(self.children))

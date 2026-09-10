@@ -16,7 +16,7 @@ class TestProtocol(unittest.TestCase):
         for bet in sent:
             payload += protocol._serialize_bet(bet)
 
-        received = protocol._deserialize_bets(payload)
+        received = protocol._deserialize_bets(payload, 1)
 
         self.assertEqual(received, sent)
 
