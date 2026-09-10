@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 366" width="900" height="366" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <rect width="900" height="366" fill="#ffffff"/>
+
+  <defs>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2c3e50"/>
+    </marker>
+  </defs>
+
+  <style>
+    .lbl  { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; fill: #16222e; }
+    .cap  { font-size: 12px; fill: #5d6f80; }
+    .hdr  { font-size: 13px; font-weight: 600; fill: #16222e; }
+    .tcp  { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; fill: #5d6f80; }
+    .conn { stroke: #2c3e50; stroke-width: 1.5; marker-end: url(#a2); marker-start: url(#a2); }
+    .fork { stroke: #9fb3c8; stroke-width: 1.3; stroke-dasharray: 5 4; fill: none; }
+  </style>
+
+  <!-- contenedor del servidor -->
+  <rect x="268" y="40" width="600" height="300" rx="6" fill="#f7faf8" stroke="#4a8b5c" stroke-width="1.6"/>
+  <text x="284" y="62" class="hdr" fill="#3a6f49">servidor</text>
+
+  <!-- columna de agencias -->
+  <text x="40" y="62" class="hdr">agencias</text>
+
+  <rect x="40" y="112" width="160" height="46" rx="4" fill="#dbe7f6" stroke="#3d6ea8" stroke-width="1.5"/>
+  <rect x="40" y="176" width="160" height="46" rx="4" fill="#dbe7f6" stroke="#3d6ea8" stroke-width="1.5"/>
+  <rect x="40" y="240" width="160" height="46" rx="4" fill="#dbe7f6" stroke="#3d6ea8" stroke-width="1.5"/>
+  <text x="120" y="140" class="lbl" text-anchor="middle">cliente 0</text>
+  <text x="120" y="204" class="lbl" text-anchor="middle">cliente 1</text>
+  <text x="120" y="268" class="lbl" text-anchor="middle">cliente N</text>
+  <text x="120" y="312" class="lbl" text-anchor="middle" fill="#8b9aa8">···</text>
+
+  <!-- proceso principal -->
+  <rect x="292" y="76" width="240" height="46" rx="4" fill="#dff0e3" stroke="#4a8b5c" stroke-width="1.5"/>
+  <text x="412" y="98" class="lbl" text-anchor="middle">proceso principal</text>
+  <text x="412" y="114" class="tcp" text-anchor="middle">accept()</text>
+
+  <!-- fork hacia los handlers -->
+  <path d="M412 122 L412 300 L580 300" class="fork"/>
+  <path d="M412 145 L580 145" class="fork"/>
+  <path d="M412 209 L580 209" class="fork"/>
+  <text x="424" y="330" class="cap">un proceso por conexión</text>
+
+  <!-- handlers -->
+  <rect x="580" y="122" width="252" height="46" rx="4" fill="#dff0e3" stroke="#4a8b5c" stroke-width="1.5"/>
+  <rect x="580" y="186" width="252" height="46" rx="4" fill="#dff0e3" stroke="#4a8b5c" stroke-width="1.5"/>
+  <rect x="580" y="250" width="252" height="46" rx="4" fill="#dff0e3" stroke="#4a8b5c" stroke-width="1.5"/>
+  <text x="706" y="150" class="lbl" text-anchor="middle">ClientHandler 0</text>
+  <text x="706" y="214" class="lbl" text-anchor="middle">ClientHandler 1</text>
+  <text x="706" y="278" class="lbl" text-anchor="middle">ClientHandler N</text>
+  <text x="706" y="316" class="lbl" text-anchor="middle" fill="#8b9aa8">···</text>
+
+  <!-- conexiones TCP, una por par -->
+  <line x1="200" y1="135" x2="580" y2="135" class="conn"/>
+  <line x1="200" y1="199" x2="580" y2="199" class="conn"/>
+  <line x1="200" y1="263" x2="580" y2="263" class="conn"/>
+  <text x="243" y="129" class="tcp">TCP</text>
+  <text x="243" y="193" class="tcp">TCP</text>
+  <text x="243" y="257" class="tcp">TCP</text>
+
+</svg>
