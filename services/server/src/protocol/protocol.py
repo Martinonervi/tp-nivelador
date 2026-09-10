@@ -1,15 +1,7 @@
 import safe_socket
 from lottery.bet import Bet
+from .const import *
 
-MSG_BATCH = 0x00
-MSG_FIN = 0x01
-MSG_ACK = 0x02
-MSG_HELLO = 0x03
-
-HEADER_SIZE = 3
-MAX_PAYLOAD_SIZE = 65535
-
-SHORT_PAYLOAD = "payload shorter than expected"
 
 class Protocol:
     def __init__(self, skt):
@@ -20,7 +12,7 @@ class Protocol:
 
     # SEND
     def send_bets(self, bets):
-        payload = len(bets).to_bytes(2, "big")
+        payload = len(bets).to_bytes(LEN_BETS_SIZE, "big")
         for bet in bets:
             payload += self._serialize_bet(bet)
         self._send_frame(MSG_BATCH, payload)
@@ -28,22 +20,22 @@ class Protocol:
     def _send_frame(self, msg_type, payload=b""):
         if len(payload) > MAX_PAYLOAD_SIZE:
             raise ValueError(f"payload too large: {len(payload)} bytes")
-        frame = msg_type.to_bytes(1, "big")
-        frame += len(payload).to_bytes(2, "big")
+        frame = msg_type.to_bytes(MSG_TYPE_SIZE, "big")
+        frame += len(payload).to_bytes(LEN_PAYLOAD_SIZE, "big")
         frame += payload
         safe_socket.send_all(self.skt, frame)
 
     def _serialize_bet(self, bet):
         buf = self._serialize_string(bet.first_name)
         buf += self._serialize_string(bet.last_name)
-        buf += bet.document.to_bytes(4, "big")
+        buf += bet.document.to_bytes(DOCUMENT_SIZE, "big")
         buf += self._serialize_birthdate(bet.birthdate)
-        buf += bet.number.to_bytes(4, "big")
+        buf += bet.number.to_bytes(NUMBER_SIZE, "big")
         return buf
 
     def _serialize_string(self, s):
         encoded = s.encode("utf-8")
-        return len(encoded).to_bytes(2, "big") + encoded
+        return len(encoded).to_bytes(LEN_STR_SIZE, "big") + encoded
 
     def _serialize_birthdate(self, birthdate):
         year, month, day = map(int, birthdate.split("-"))
@@ -67,7 +59,7 @@ class Protocol:
         msg_type, payload = self._recv_frame()
         if msg_type != MSG_HELLO:
             raise ValueError(f"expected MSG_HELLO, got msgType {msg_type}")
-        if len(payload) != 1:
+        if len(payload) != AGENCY_ID_SIZE:
             raise ValueError(SHORT_PAYLOAD)
         return payload[0]
 
@@ -84,16 +76,16 @@ class Protocol:
         header = safe_socket.recv_all(self.skt, HEADER_SIZE)
         if not header:
             raise ConnectionError("closed socket")
-        payload_len = int.from_bytes(header[1:3], "big")
+        payload_len = int.from_bytes(header[MSG_TYPE_SIZE:HEADER_SIZE], "big")
         payload = safe_socket.recv_all(self.skt, payload_len) if payload_len else b""
         return header[0], payload
 
     def _deserialize_bets(self, payload, agency_id):
-        if len(payload) < 2:
+        if len(payload) < LEN_BETS_SIZE:
             raise ValueError(SHORT_PAYLOAD)
 
-        count_of_bets = int.from_bytes(payload[0:2], "big")
-        offset = 2
+        count_of_bets = int.from_bytes(payload[0:LEN_BETS_SIZE], "big")
+        offset = LEN_BETS_SIZE
 
         bets = []
         for _ in range(count_of_bets):
@@ -108,20 +100,22 @@ class Protocol:
         first_name, offset = self._deserialize_string(payload, offset)
         last_name, offset = self._deserialize_string(payload, offset)
 
-        if offset + 12 > len(payload):
+        tail_size = DOCUMENT_SIZE + BIRTHDATE_SIZE + NUMBER_SIZE
+        if offset + tail_size > len(payload):
             raise ValueError(SHORT_PAYLOAD)
-        document = int.from_bytes(payload[offset:offset + 4], "big")
-        birthdate = self._deserialize_birthdate(payload[offset + 4:offset + 8])
-        number = int.from_bytes(payload[offset + 8:offset + 12], "big")
-        offset += 12
+        document = int.from_bytes(payload[offset:offset + DOCUMENT_SIZE], "big")
+        birthdate = self._deserialize_birthdate(
+            payload[offset + DOCUMENT_SIZE:offset + DOCUMENT_SIZE + BIRTHDATE_SIZE])
+        number = int.from_bytes(payload[offset + DOCUMENT_SIZE + BIRTHDATE_SIZE:offset + tail_size], "big")
+        offset += tail_size
 
         return Bet(agency_id, first_name, last_name, document, birthdate, number), offset
 
     def _deserialize_string(self, payload, offset):
-        if offset + 2 > len(payload):
+        if offset + LEN_STR_SIZE > len(payload):
             raise ValueError(SHORT_PAYLOAD)
-        length = int.from_bytes(payload[offset:offset + 2], "big")
-        offset += 2
+        length = int.from_bytes(payload[offset:offset + LEN_STR_SIZE], "big")
+        offset += LEN_STR_SIZE
         if offset + length > len(payload):
             raise ValueError(SHORT_PAYLOAD)
         return payload[offset:offset + length].decode("utf-8"), offset + length

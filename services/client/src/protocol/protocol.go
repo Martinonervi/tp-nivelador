@@ -11,36 +11,6 @@ import (
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
 )
 
-const (
-	MSG_BATCH byte = 0x00
-	MSG_FIN   byte = 0x01
-	MSG_ACK   byte = 0x02
-	MSG_HELLO byte = 0x03
-
-	HEADER_SIZE      = 3
-	MAX_PAYLOAD_SIZE = 65535
-)
-
-// PROTOCOLO
-// => Header(3B) + payload(variable)
-// Header:
-//		msgType 1B
-//		lenPayload 2B
-//
-// Payload de MSG_HELLO:
-//		agencyId 1B
-//
-// Payload de MSG_BATCH:
-//	lenBets 2B
-//  N bets:
-//		lenStrFirstName 2B
-//		firstName (variable)
-//		lenStrLastName 2B
-//		lastName (variable)
-//		Document 4B
-//		birthday 4B
-//		betNumber 4B
-
 type Protocol struct {
 	skt net.Conn
 }
@@ -60,7 +30,9 @@ func (p *Protocol) SendAck() error {
 }
 
 func (p *Protocol) SendHello(agencyId int) error {
-	return p.sendFrame(MSG_HELLO, []byte{byte(agencyId)})
+	payload := make([]byte, AGENCY_ID_SIZE)
+	payload[0] = byte(agencyId)
+	return p.sendFrame(MSG_HELLO, payload)
 }
 
 func (p *Protocol) SendNoMoreBets() error {
@@ -109,14 +81,14 @@ func (p *Protocol) sendFrame(msgType byte, payload []byte) error {
 }
 
 func appendString(buffer []byte, s string) []byte {
-	lenBuf := make([]byte, 2)
+	lenBuf := make([]byte, LEN_STR_SIZE)
 	binary.BigEndian.PutUint16(lenBuf, uint16(len(s)))
 	buffer = append(buffer, lenBuf...)
 	return append(buffer, []byte(s)...)
 }
 
 func appendDocument(buffer []byte, document int) []byte {
-	buf := make([]byte, 4)
+	buf := make([]byte, DOCUMENT_SIZE)
 	binary.BigEndian.PutUint32(buf, uint32(document))
 	return append(buffer, buf...)
 }
@@ -126,7 +98,7 @@ func appendBirthdate(buffer []byte, birthdate string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, 4)
+	buf := make([]byte, BIRTHDATE_SIZE)
 	binary.BigEndian.PutUint16(buf, uint16(date.Year()))
 	buf[2] = byte(date.Month())
 	buf[3] = byte(date.Day())
@@ -135,7 +107,7 @@ func appendBirthdate(buffer []byte, birthdate string) ([]byte, error) {
 }
 
 func appendBetNumber(buffer []byte, betNumber int) []byte {
-	buf := make([]byte, 4)
+	buf := make([]byte, NUMBER_SIZE)
 	binary.BigEndian.PutUint32(buf, uint32(betNumber))
 	buffer = append(buffer, buf...)
 	return buffer
@@ -179,7 +151,7 @@ func (p *Protocol) recvFrame() (byte, []byte, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-	payloadLen := int(binary.BigEndian.Uint16(header[1:3]))
+	payloadLen := int(binary.BigEndian.Uint16(header[MSG_TYPE_SIZE:HEADER_SIZE]))
 	if payloadLen == 0 {
 		return header[0], nil, nil
 	}
@@ -193,12 +165,12 @@ func (p *Protocol) recvFrame() (byte, []byte, error) {
 var errShortPayload = errors.New("payload shorter than expected")
 
 func deserializeBets(payload []byte) ([]lottery.Bet, error) {
-	if len(payload) < 2 {
+	if len(payload) < LEN_BETS_SIZE {
 		return nil, errShortPayload
 	}
 
-	countOfBets := int(binary.BigEndian.Uint16(payload[0:2]))
-	offset := 2
+	countOfBets := int(binary.BigEndian.Uint16(payload[0:LEN_BETS_SIZE]))
+	offset := LEN_BETS_SIZE
 
 	bets := make([]lottery.Bet, 0, countOfBets)
 	for range countOfBets {
@@ -231,24 +203,25 @@ func deserializeBet(payload []byte, offset int) (lottery.Bet, int, error) {
 	}
 	bet.LastName = lastName
 
-	if offset+12 > len(payload) {
+	tailSize := DOCUMENT_SIZE + BIRTHDATE_SIZE + NUMBER_SIZE
+	if offset+tailSize > len(payload) {
 		return bet, offset, errShortPayload
 	}
-	buffer := payload[offset : offset+12]
-	bet.Document = int(binary.BigEndian.Uint32(buffer[:4]))
-	bet.Birthdate = deserializeBirthdate(buffer[4:8])
-	bet.Number = int(binary.BigEndian.Uint32(buffer[8:]))
-	offset += 12
+	buffer := payload[offset : offset+tailSize]
+	bet.Document = int(binary.BigEndian.Uint32(buffer[:DOCUMENT_SIZE]))
+	bet.Birthdate = deserializeBirthdate(buffer[DOCUMENT_SIZE : DOCUMENT_SIZE+BIRTHDATE_SIZE])
+	bet.Number = int(binary.BigEndian.Uint32(buffer[DOCUMENT_SIZE+BIRTHDATE_SIZE:]))
+	offset += tailSize
 
 	return bet, offset, nil
 }
 
 func deserializeString(payload []byte, offset int) (string, int, error) {
-	if offset+2 > len(payload) {
+	if offset+LEN_STR_SIZE > len(payload) {
 		return "", offset, errShortPayload
 	}
-	length := int(binary.BigEndian.Uint16(payload[offset : offset+2]))
-	offset += 2
+	length := int(binary.BigEndian.Uint16(payload[offset : offset+LEN_STR_SIZE]))
+	offset += LEN_STR_SIZE
 	if offset+length > len(payload) {
 		return "", offset, errShortPayload
 	}

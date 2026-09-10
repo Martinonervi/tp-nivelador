@@ -2,9 +2,6 @@ import multiprocessing as mp
 import socket
 import logger
 
-from protocol import Protocol
-from lottery import Lottery
-
 from .client_handler import ClientHandler
 import signal
 
@@ -13,6 +10,7 @@ class Server:
         self.server_host = server_host
         self.server_port = server_port
         self.storage_path = storage_path
+        # se crean antes del primer fork para que los hijos los hereden
         self.storage_lock = mp.Lock()
         self.quorum = mp.Barrier(agency_quorum_min)
         self.children = []
@@ -42,22 +40,23 @@ class Server:
                 process = mp.Process(target=handler.run)
 
                 process.start()
+                # el padre cierra su copia del fd, el hijo se queda con la suya
                 client_socket.close()
                 self.children.append(process)
 
         finally:
             self._close()
 
-
     def _shutdown(self, signum, frame):
         self.running = False
         if self.server_socket is not None:
-            self.server_socket.close()
-        self.quorum.abort()
+            self.server_socket.close() # destraba el accept()
+        self.quorum.abort()  # destraba a los que esperan en la barrera
 
     def _close(self):
         action = "shutdown"
         logger.info(action, logger.LogResult.in_progress)
+        # primero les aviso a todos que cierren y luego los espero
         for process in self.children:
             process.terminate()
         for process in self.children:

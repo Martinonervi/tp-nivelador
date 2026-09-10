@@ -77,6 +77,7 @@ func run() int {
 	}
 
 	go func() {
+		// si llega SIGTERM llama al Close del cliente, que lo destraba
 		<-sigs
 		logger.Info("shutdown", logger.InProgress)
 		if err := client.Close(); err != nil {

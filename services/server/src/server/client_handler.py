@@ -41,6 +41,7 @@ class ClientHandler:
             self.protocol.send_no_more_bets()
 
         except BrokenBarrierError:
+            # el padre aborto la barrera, es un cierre ordenado, no una falla
             logger.info(action, logger.LogResult.success, "shutdown", True)
 
         except Exception as e:

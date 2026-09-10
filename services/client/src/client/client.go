@@ -99,18 +99,22 @@ func (client *Client) run() error {
 
 	scanner := bufio.NewScanner(inputFile)
 
+	// primer mensaje donde manda el agencyID
 	if err := client.proto.SendHello(client.config.AgencyId); err != nil {
 		return err
 	}
 
+	// manda todas las bets de a batch, cada vez que envia uno espera ack del servidor
 	if err := client.sendBets(scanner, client.config.AgencyId); err != nil {
 		return err
 	}
 
+	// le avisa al servidor que termino de mandar
 	if err := client.proto.SendNoMoreBets(); err != nil {
 		return err
 	}
 
+	// recibe las apuestas de los ganadores de a batch, manda ack cada vez que recibe uno
 	if err := client.recvWinners(dataWriter); err != nil {
 		return err
 	}
@@ -205,6 +209,6 @@ func writeBetsToFile(writer *bufio.Writer, bet []lottery.Bet) error {
 }
 
 func (client *Client) Close() error {
-	client.running.Store(false)
-	return client.proto.Close()
+	client.running.Store(false) //se hace para diferenciar la falla ordeanda de un error
+	return client.proto.Close() // cierra el socket
 }
