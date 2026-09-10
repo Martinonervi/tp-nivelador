@@ -74,14 +74,13 @@ func connectToServer(host, port string) (*protocol.Protocol, error) {
 	if err != nil {
 		return nil, err
 	}
-	p, err = protocol.NewProtocol(conn)
+	p = protocol.NewProtocol(conn)
 
-	return p, err
+	return p, nil
 }
 
 func (client *Client) run() error {
 	defer client.proto.Close()
-	const mainAction = "client run"
 
 	inputFile, err := os.Open(client.config.InputFile)
 	if err != nil {
@@ -99,9 +98,6 @@ func (client *Client) run() error {
 	dataWriter := bufio.NewWriter(outputFile)
 
 	scanner := bufio.NewScanner(inputFile)
-	if err != nil {
-		return err
-	}
 
 	if err := client.proto.SendHello(client.config.AgencyId); err != nil {
 		return err
@@ -111,17 +107,15 @@ func (client *Client) run() error {
 		return err
 	}
 
-	err = client.proto.SendNoMoreBets()
-	if err != nil {
+	if err := client.proto.SendNoMoreBets(); err != nil {
 		return err
 	}
 
-	err = client.recvWinners(dataWriter)
-	if err != nil {
+	if err := client.recvWinners(dataWriter); err != nil {
 		return err
 	}
 
-	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
+	logger.Info("client run", logger.Success, "agency-id", client.config.AgencyId)
 	return nil
 }
 func (client *Client) sendBets(scanner *bufio.Scanner, agencyId int) error {

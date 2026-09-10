@@ -16,7 +16,6 @@ class Server:
         self.server_port = server_port
         self.storage_path = storage_path
         self.storage_lock = mp.Lock()
-        self.agency_quorum_min = agency_quorum_min
         self.quorum = mp.Barrier(agency_quorum_min)
         self.children = []
         self.server_socket = None

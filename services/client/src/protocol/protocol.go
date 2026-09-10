@@ -45,8 +45,8 @@ type Protocol struct {
 	skt net.Conn
 }
 
-func NewProtocol(socket net.Conn) (*Protocol, error) {
-	return &Protocol{skt: socket}, nil
+func NewProtocol(socket net.Conn) *Protocol {
+	return &Protocol{skt: socket}
 }
 
 func (p *Protocol) Close() error {
